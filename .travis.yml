@@ -3,9 +3,13 @@ language: objective-c
 
 matrix:
   include:
+    - env: OSX=10.12
+      os: osx
+      osx_image: xcode8.2
+      rvm: system
     - env: OSX=10.11
       os: osx
-      osx_image: osx10.11
+      osx_image: xcode8
       rvm: system
     - env: OSX=10.10
       os: osx
