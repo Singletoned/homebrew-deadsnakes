@@ -1,8 +1,8 @@
 class Python35 < Formula
   desc "Interpreted, interactive, object-oriented programming language"
   homepage "https://www.python.org/"
-  url "https://www.python.org/ftp/python/3.5.4/Python-3.5.4.tar.xz"
-  sha256 "94d93bfabb3b109f8a10365a325f920f9ec98c6e2380bf228f9700a14054c84c"
+  url "https://www.python.org/ftp/python/3.5.6/Python-3.5.6.tar.xz"
+  sha256 "f55cde04f521f273c7cba08912921cc5642cfc15ca7b22d5829f0aff4371155f"
 
   head "https://hg.python.org/cpython", :using => :hg, :branch => '3.5'
 
@@ -40,11 +40,6 @@ class Python35 < Formula
   resource "wheel" do
     url "https://pypi.python.org/packages/source/w/wheel/wheel-0.29.0.tar.gz"
     sha256 "1ebb8ad7e26b448e9caa4773d2357849bf80ff9e313964bcaf79cbf0201a1648"
-  end
-
-  fails_with :clang do
-    build 425
-    cause "https://bugs.python.org/issue24844"
   end
 
   # Homebrew's tcl-tk is built in a standard unix fashion (due to link errors)
@@ -262,7 +257,7 @@ class Python35 < Formula
     end
 
     cfg = lib_cellar/"distutils/distutils.cfg"
-    cfg.atomic_write <<-EOF.undent
+    cfg.atomic_write <<~EOF
       [install]
       prefix=#{HOMEBREW_PREFIX}
 
@@ -277,7 +272,7 @@ class Python35 < Formula
   end
 
   def sitecustomize
-    <<-EOF.undent
+    <<~EOF
       # This file is created by Homebrew and is executed on each python startup.
       # Don't print from here, or else python command line scripts may fail!
       # <https://github.com/Homebrew/brew/blob/master/docs/Homebrew-and-Python.md>

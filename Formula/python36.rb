@@ -1,14 +1,15 @@
-class Python34 < Formula
+class Python36 < Formula
   desc "Interpreted, interactive, object-oriented programming language"
   homepage "https://www.python.org/"
-  url "https://www.python.org/ftp/python/3.4.9/Python-3.4.9.tar.xz"
-  sha256 "59629676ba2b01a798f5211d8f63c26ee52f1d5133cf37583e0bf1bad50c2bd9"
+  url "https://www.python.org/ftp/python/3.6.8/Python-3.6.8.tar.xz"
+  sha256 "35446241e995773b1bed7d196f4b624dadcadc8429f26282e756b2fb8a351193"
 
-  head "https://hg.python.org/cpython", :using => :hg, :branch => '3.4'
+  head "https://hg.python.org/cpython", :using => :hg, :branch => '3.6'
 
   option :universal
-  option "with-tcl-tk", "Use Homebrew's Tk instead of OS X Tk (has optional Cocoa and threads support)"
+  option "with-tcl-tk", "Use Homebrew's Tk instead of macOS Tk (has optional Cocoa and threads support)"
   option "with-quicktest", "Run `make quicktest` after the build"
+  option "with-sphinx-doc", "Build HTML documentation"
 
   deprecated_option "quicktest" => "with-quicktest"
   deprecated_option "with-brewed-tk" => "with-tcl-tk"
@@ -21,23 +22,24 @@ class Python34 < Formula
   depends_on "xz" => :recommended # for the lzma module added in 3.3
   depends_on "tcl-tk" => :optional
   depends_on :x11 if build.with?("tcl-tk") && Tab.for_name("tcl-tk").with?("x11")
+  depends_on "sphinx-doc" => [:build, :optional]
 
-  skip_clean "bin/pip3", "bin/pip-3.4"
-  skip_clean "bin/easy_install3", "bin/easy_install-3.4"
+  skip_clean "bin/pip3", "bin/pip-3.6"
+  skip_clean "bin/easy_install3", "bin/easy_install-3.6"
 
   resource "setuptools" do
-    url "https://pypi.python.org/packages/source/s/setuptools/setuptools-20.2.2.tar.gz"
-    sha256 "24fcfc15364a9fe09a220f37d2dcedc849795e3de3e4b393ee988e66a9cbd85a"
+    url "https://files.pythonhosted.org/packages/9f/32/81c324675725d78e7f6da777483a3453611a427db0145dfb878940469692/setuptools-25.2.0.tar.gz"
+    sha256 "b2757ddac2c41173140b111e246d200768f6dd314110e1e40661d0ecf9b4d6a6"
   end
 
   resource "pip" do
-    url "https://pypi.python.org/packages/source/p/pip/pip-7.1.2.tar.gz"
-    sha256 "ca047986f0528cfa975a14fb9f7f106271d4e0c3fe1ddced6c1db2e7ae57a477"
+    url "https://pypi.python.org/packages/e7/a8/7556133689add8d1a54c0b14aeff0acb03c64707ce100ecd53934da1aa13/pip-8.1.2.tar.gz"
+    sha256 "4d24b03ffa67638a3fa931c09fd9e0273ffa904e95ebebe7d4b1a54c93d7b732"
   end
 
   resource "wheel" do
-    url "https://pypi.python.org/packages/source/w/wheel/wheel-0.26.0.tar.gz"
-    sha256 "eaad353805c180a47545a256e6508835b65a8e830ba1093ed8162f19a50a530c"
+    url "https://pypi.python.org/packages/source/w/wheel/wheel-0.29.0.tar.gz"
+    sha256 "1ebb8ad7e26b448e9caa4773d2357849bf80ff9e313964bcaf79cbf0201a1648"
   end
 
   # Homebrew's tcl-tk is built in a standard unix fashion (due to link errors)
@@ -60,11 +62,18 @@ class Python34 < Formula
 
   # setuptools remembers the build flags python is built with and uses them to
   # build packages later. Xcode-only systems need different flags.
-  def pour_bottle?
-    MacOS::CLT.installed?
+  pour_bottle? do
+    reason <<~EOS
+    The bottle needs the Apple Command Line Tools to be installed.
+      You can install them, if desired, with:
+        xcode-select --install
+    EOS
+    satisfy { MacOS::CLT.installed? }
   end
 
   def install
+    ENV.permit_weak_imports
+
     # Unset these so that installing pip and setuptools puts them where we want
     # and not into some other Python the user has installed.
     ENV["PYTHONHOME"] = nil
@@ -80,20 +89,24 @@ class Python34 < Formula
     ]
 
     args << "--without-gcc" if ENV.compiler == :clang
+    args << "--enable-loadable-sqlite-extensions" if build.with?("sqlite")
+
+    cflags   = []
+    ldflags  = []
+    cppflags = []
 
     unless MacOS::CLT.installed?
       # Help Python's build system (setuptools/pip) to build things on Xcode-only systems
       # The setup.py looks at "-isysroot" to get the sysroot (and not at --sysroot)
-      cflags = "CFLAGS=-isysroot #{MacOS.sdk_path}"
-      ldflags = "LDFLAGS=-isysroot #{MacOS.sdk_path}"
-      args << "CPPFLAGS=-I#{MacOS.sdk_path}/usr/include" # find zlib
+      cflags   << "-isysroot #{MacOS.sdk_path}"
+      ldflags  << "-isysroot #{MacOS.sdk_path}"
+      cppflags << "-I#{MacOS.sdk_path}/usr/include" # find zlib
+      # For the Xlib.h, Python needs this header dir with the system Tk
       if build.without? "tcl-tk"
-        cflags += " -I#{MacOS.sdk_path}/System/Library/Frameworks/Tk.framework/Versions/8.5/Headers"
+        cflags << "-I#{MacOS.sdk_path}/System/Library/Frameworks/Tk.framework/Versions/8.5/Headers"
       end
-      args << cflags
-      args << ldflags
     end
-    # Avoid linking to libgcc http://code.activestate.com/lists/python-dev/112195/
+    # Avoid linking to libgcc https://mail.python.org/pipermail/python-dev/2012-February/116205.html
     args << "MACOSX_DEPLOYMENT_TARGET=#{MacOS.version}"
 
     # We want our readline and openssl! This is just to outsmart the detection code,
@@ -109,8 +122,13 @@ class Python34 < Formula
       args << "--enable-universalsdk" << "--with-universal-archs=intel"
     end
 
-    # Allow sqlite3 module to load extensions: http://docs.python.org/library/sqlite3.html#f1
-    inreplace("setup.py", 'sqlite_defines.append(("SQLITE_OMIT_LOAD_EXTENSION", "1"))', "pass") if build.with? "sqlite"
+    if build.with? "sqlite"
+      inreplace "setup.py" do |s|
+        s.gsub! "sqlite_setup_debug = False", "sqlite_setup_debug = True"
+        s.gsub! "for d_ in inc_dirs + sqlite_inc_paths:",
+                "for d_ in ['#{Formula["sqlite"].opt_include}']:"
+      end
+    end
 
     # Allow python modules to use ctypes.find_library to find homebrew's stuff
     # even if homebrew is not a /usr/local/lib. Try this with:
@@ -122,26 +140,42 @@ class Python34 < Formula
 
     if build.with? "tcl-tk"
       tcl_tk = Formula["tcl-tk"].opt_prefix
-      ENV.append "CPPFLAGS", "-I#{tcl_tk}/include"
-      ENV.append "LDFLAGS", "-L#{tcl_tk}/lib"
+      cppflags << "-I#{tcl_tk}/include"
+      ldflags  << "-L#{tcl_tk}/lib"
     end
+
+    args << "CFLAGS=#{cflags.join(" ")}" unless cflags.empty?
+    args << "LDFLAGS=#{ldflags.join(" ")}" unless ldflags.empty?
+    args << "CPPFLAGS=#{cppflags.join(" ")}" unless cppflags.empty?
 
     system "./configure", *args
 
     system "make"
+    if build.with?("quicktest")
+      system "make", "quicktest", "TESTPYTHONOPTS=-s", "TESTOPTS=-j#{ENV.make_jobs} -w"
+    end
 
-    ENV.deparallelize # Installs must be serialized
-    # Tell Python not to install into /Applications (default for framework builds)
-    # `make install` can overwrite or masquerade the python binary. `make altinstall` is therefore recommended
-    # instead of `make install` since it only installs exec_prefix/bin/pythonversion
-    system "make", "altinstall", "PYTHONAPPSDIR=#{prefix}"
-    # Demos and Tools
-    system "make", "frameworkinstallextras", "PYTHONAPPSDIR=#{share}/python3"
-    system "make", "quicktest" if build.include? "quicktest"
+    ENV.deparallelize do
+      # Tell Python not to install into /Applications (default for framework builds)
+      # `make install` can overwrite or masquerade the python binary. `make altinstall` is therefore recommended
+      # instead of `make install` since it only installs exec_prefix/bin/pythonversion
+      system "make", "altinstall", "PYTHONAPPSDIR=#{prefix}"
+      system "make", "frameworkinstallextras", "PYTHONAPPSDIR=#{share}/python3"
+    end
 
-    # Any .app get a " 34" attached, so it does not conflict with python 2.x or any other
-    # python 3.x version
-    Dir.glob("#{prefix}/*.app") { |app| mv app, app.sub(".app", " 34.app") }
+    # Any .app get a " 3" attached, so it does not conflict with python 2.x.
+    Dir.glob("#{prefix}/*.app") { |app| mv app, app.sub(/\.app$/, " 35.app") }
+
+    # Prevent third-party packages from building against fragile Cellar paths
+    inreplace Dir[lib_cellar/"**/_sysconfigdata_m_darwin_darwin.py",
+                  lib_cellar/"config*/Makefile",
+                  frameworks/"Python.framework/Versions/3*/lib/pkgconfig/python-3.?.pc"],
+              prefix, opt_prefix
+
+    # Help third-party packages find the Python framework
+    inreplace Dir[lib_cellar/"config*/Makefile"],
+              /^LINKFORSHARED=(.*)PYTHONFRAMEWORKDIR(.*)/,
+              "LINKFORSHARED=\\1PYTHONFRAMEWORKINSTALLDIR\\2"
 
     # A fix, because python and python3 both want to install Python.framework
     # and therefore we can't link both into HOMEBREW_PREFIX/Frameworks
@@ -155,15 +189,15 @@ class Python34 < Formula
     # Remove the site-packages that Python created in its Cellar.
     site_packages_cellar.rmtree
 
-    # These makevars are available through distutils.sysconfig at runtime and
-    # some third-party software packages depend on them
-    inreplace frameworks/"Python.framework/Versions/#{xy}/lib/python#{xy}/config-#{xy}m/Makefile" do |s|
-      s.change_make_var! "LINKFORSHARED",
-                         "-u _PyMac_Error #{opt_prefix}/Frameworks/Python.framework/Versions/#{xy}/Python"
-    end
-
     %w[setuptools pip wheel].each do |r|
       (libexec/r).install resource(r)
+    end
+
+    if build.with? "sphinx-doc"
+      cd "Doc" do
+        system "make", "html"
+        doc.install Dir["build/html/*"]
+      end
     end
   end
 
@@ -192,7 +226,7 @@ class Python34 < Formula
 
     %w[setuptools pip wheel].each do |pkg|
       (libexec/pkg).cd do
-        system bin/"python#{xy}", "-s", "setup.py", "install",
+        system bin/"python#{xy}", "-s", "setup.py", "--no-user-cfg", "install",
                "--force", "--verbose", "--install-scripts=#{bin}",
                "--install-lib=#{site_packages}",
                "--single-version-externally-managed",
@@ -204,7 +238,7 @@ class Python34 < Formula
     mv bin/"wheel", bin/"wheel#{xy}"
 
     # post_install happens after link
-    %W[pip#{xy} easy_install-#{xy} wheel#{xy}].each do |e|
+    %W[pip#{xy} pip#{xy} easy_install-#{xy} wheel#{xy}].each do |e|
       (HOMEBREW_PREFIX/"bin").install_symlink bin/e
     end
 
@@ -234,14 +268,14 @@ class Python34 < Formula
   end
 
   def xy
-    version.to_s.slice(/(3.\d)/) || "3.6"
+    version.to_s.slice(/(3\.\d)/) || "3.6"
   end
 
   def sitecustomize
     <<~EOF
       # This file is created by Homebrew and is executed on each python startup.
       # Don't print from here, or else python command line scripts may fail!
-      # <https://github.com/Homebrew/homebrew/blob/master/share/doc/homebrew/Homebrew-and-Python.md>
+      # <https://github.com/Homebrew/brew/blob/master/docs/Homebrew-and-Python.md>
       import re
       import os
       import sys
@@ -277,8 +311,8 @@ class Python34 < Formula
 
   def caveats
     text = <<~EOS
-      Pip and setuptools have been installed. To update them
-        pip#{xy} install --upgrade pip setuptools
+      Pip, setuptools, and wheel have been installed. To update them
+        pip#{xy} install --upgrade pip setuptools wheel
 
       You can install Python packages with
         pip#{xy} install <package>
@@ -286,14 +320,14 @@ class Python34 < Formula
       They will install into the site-package directory
         #{site_packages}
 
-      See: https://github.com/Homebrew/homebrew/blob/master/share/doc/homebrew/Homebrew-and-Python.md
+      See: https://github.com/Homebrew/brew/blob/master/docs/Homebrew-and-Python.md
     EOS
 
     # Tk warning only for 10.6
     tk_caveats = <<~EOS
 
       Apple's Tcl/Tk is not recommended for use with Python on Mac OS X 10.6.
-      For more information see: http://www.python.org/download/mac/tcltk/
+      For more information see: https://www.python.org/download/mac/tcltk/
     EOS
 
     text += tk_caveats unless MacOS.version >= :lion
